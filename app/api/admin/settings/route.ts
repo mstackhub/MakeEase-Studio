@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db, settings } from "@/db";
 import { eq } from "drizzle-orm";
 import { getAdminSessionFromRequest } from "@/lib/auth";
+import { clearDbCache } from "@/lib/db-queries";
 
 export async function PUT(req: NextRequest) {
   const session = await getAdminSessionFromRequest(req);
@@ -49,6 +50,7 @@ export async function PUT(req: NextRequest) {
       })
       .where(eq(settings.id, "default"));
 
+    clearDbCache();
     return NextResponse.json({ success: true });
   } catch (error: any) {
     return NextResponse.json({ error: error.message || "Failed to update settings" }, { status: 500 });

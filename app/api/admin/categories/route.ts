@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db, categories } from "@/db";
 import { eq } from "drizzle-orm";
 import { getAdminSessionFromRequest } from "@/lib/auth";
+import { clearDbCache } from "@/lib/db-queries";
 
 export async function POST(req: NextRequest) {
   const session = await getAdminSessionFromRequest(req);
@@ -25,6 +26,7 @@ export async function POST(req: NextRequest) {
       status: status || "active",
     });
 
+    clearDbCache();
     return NextResponse.json({ success: true, id });
   } catch (error: any) {
     return NextResponse.json({ error: error.message || "Failed to create category" }, { status: 500 });
@@ -52,6 +54,7 @@ export async function PUT(req: NextRequest) {
       })
       .where(eq(categories.id, id));
 
+    clearDbCache();
     return NextResponse.json({ success: true });
   } catch (error: any) {
     return NextResponse.json({ error: error.message || "Failed to update category" }, { status: 500 });
@@ -68,6 +71,7 @@ export async function DELETE(req: NextRequest) {
     if (!id) return NextResponse.json({ error: "ID required" }, { status: 400 });
 
     await db.delete(categories).where(eq(categories.id, id));
+    clearDbCache();
     return NextResponse.json({ success: true });
   } catch (error: any) {
     return NextResponse.json({ error: error.message || "Failed to delete category" }, { status: 500 });

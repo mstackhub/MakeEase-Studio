@@ -10,6 +10,7 @@ import {
 } from "@/db";
 import { eq } from "drizzle-orm";
 import { getAdminSessionFromRequest } from "@/lib/auth";
+import { clearDbCache } from "@/lib/db-queries";
 
 export async function POST(req: NextRequest) {
   const session = await getAdminSessionFromRequest(req);
@@ -173,6 +174,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    clearDbCache();
     return NextResponse.json({ success: true, id: productId, slug });
   } catch (error: any) {
     console.error("Create product error:", error);
@@ -341,6 +343,7 @@ export async function PUT(req: NextRequest) {
       }
     }
 
+    clearDbCache();
     return NextResponse.json({ success: true, id });
   } catch (error: any) {
     console.error("Update product error:", error);
@@ -370,6 +373,7 @@ export async function DELETE(req: NextRequest) {
     await db.delete(productGallery).where(eq(productGallery.productId, id));
     await db.delete(products).where(eq(products.id, id));
 
+    clearDbCache();
     return NextResponse.json({ success: true });
   } catch (error: any) {
     console.error("Delete product error:", error);

@@ -3,7 +3,7 @@ import "./globals.css";
 import { getSettings } from "@/lib/db-queries";
 import { GoogleAnalytics } from "@/components/analytics/GoogleAnalytics";
 
-export const dynamic = "force-dynamic";
+export const revalidate = 60;
 
 export async function generateMetadata(): Promise<Metadata> {
   const settings = await getSettings();

@@ -1,13 +1,31 @@
 import { db, products, categories, productCategories, productBadges, productProblems, productFeatures, productGallery, leads, settings } from "@/db";
 import { eq, desc, asc, and, sql } from "drizzle-orm";
+import { cache } from "react";
 
-export async function getSettings() {
+// In-memory microcache (30 seconds) to avoid redundant DB roundtrips on navigation
+let cachedSettings: any = null;
+let settingsCacheTime = 0;
+
+let cachedCategories: any = null;
+let categoriesCacheTime = 0;
+
+export const getSettings = cache(async () => {
+  const now = Date.now();
+  if (cachedSettings && now - settingsCacheTime < 30000) {
+    return cachedSettings;
+  }
+
   try {
     const res = await db.select().from(settings).where(eq(settings.id, "default")).limit(1);
-    if (res.length > 0) return res[0];
+    if (res.length > 0) {
+      cachedSettings = res[0];
+      settingsCacheTime = now;
+      return res[0];
+    }
   } catch (error) {
     console.error("Error fetching settings:", error);
   }
+
   return {
     id: "default",
     siteName: "MakeEase Studio",
@@ -29,16 +47,24 @@ export async function getSettings() {
     defaultOgImage: null,
     updatedAt: new Date().toISOString(),
   };
-}
+});
 
-export async function getCategories() {
+export const getCategories = cache(async () => {
+  const now = Date.now();
+  if (cachedCategories && now - categoriesCacheTime < 30000) {
+    return cachedCategories;
+  }
+
   try {
-    return await db.select().from(categories).where(eq(categories.status, "active")).orderBy(asc(categories.sortOrder));
+    const res = await db.select().from(categories).where(eq(categories.status, "active")).orderBy(asc(categories.sortOrder));
+    cachedCategories = res;
+    categoriesCacheTime = now;
+    return res;
   } catch (error) {
     console.error("Error fetching categories:", error);
     return [];
   }
-}
+});
 
 export async function getAllCategoriesAdmin() {
   try {
@@ -92,105 +118,143 @@ export interface FullProduct {
   gallery: { id: string; imageUrl: string; altText: string | null; caption: string | null; sortOrder: number | null }[];
 }
 
-export async function getPublishedProducts(): Promise<FullProduct[]> {
+let cachedPublishedProducts: FullProduct[] | null = null;
+let publishedProductsCacheTime = 0;
+
+export function clearDbCache() {
+  cachedSettings = null;
+  settingsCacheTime = 0;
+  cachedCategories = null;
+  categoriesCacheTime = 0;
+  cachedPublishedProducts = null;
+  publishedProductsCacheTime = 0;
+}
+
+export const getPublishedProducts = cache(async (): Promise<FullProduct[]> => {
+  const now = Date.now();
+  if (cachedPublishedProducts && now - publishedProductsCacheTime < 30000) {
+    return cachedPublishedProducts;
+  }
+
   try {
-    const rawProducts = await db
-      .select()
-      .from(products)
-      .where(eq(products.status, "published"))
-      .orderBy(asc(products.sortOrder), desc(products.createdAt));
-
-    const result: FullProduct[] = [];
-    for (const p of rawProducts) {
-      const pCats = await db
-        .select({ id: categories.id, name: categories.name, slug: categories.slug })
+    // Parallel batch fetch all product-related tables in 1 single roundtrip
+    const [rawProducts, allProductCategories, allBadges, allProblems, allFeatures, allGallery] = await Promise.all([
+      db
+        .select()
+        .from(products)
+        .where(eq(products.status, "published"))
+        .orderBy(asc(products.sortOrder), desc(products.createdAt)),
+      db
+        .select({
+          productId: productCategories.productId,
+          id: categories.id,
+          name: categories.name,
+          slug: categories.slug,
+        })
         .from(productCategories)
-        .innerJoin(categories, eq(productCategories.categoryId, categories.id))
-        .where(eq(productCategories.productId, p.id));
+        .innerJoin(categories, eq(productCategories.categoryId, categories.id)),
+      db.select().from(productBadges),
+      db.select().from(productProblems).orderBy(asc(productProblems.sortOrder)),
+      db.select().from(productFeatures).orderBy(asc(productFeatures.sortOrder)),
+      db.select().from(productGallery).orderBy(asc(productGallery.sortOrder)),
+    ]);
 
-      const pBadges = await db
-        .select({ badge: productBadges.badge })
-        .from(productBadges)
-        .where(eq(productBadges.productId, p.id));
-
-      const pProblems = await db
-        .select()
-        .from(productProblems)
-        .where(eq(productProblems.productId, p.id))
-        .orderBy(asc(productProblems.sortOrder));
-
-      const pFeatures = await db
-        .select()
-        .from(productFeatures)
-        .where(eq(productFeatures.productId, p.id))
-        .orderBy(asc(productFeatures.sortOrder));
-
-      const pGallery = await db
-        .select()
-        .from(productGallery)
-        .where(eq(productGallery.productId, p.id))
-        .orderBy(asc(productGallery.sortOrder));
-
-      result.push({
-        ...p,
-        categories: pCats,
-        badges: pBadges.map((b) => b.badge),
-        problems: pProblems,
-        features: pFeatures,
-        gallery: pGallery,
-      });
+    // Group related data by productId in memory
+    const catMap = new Map<string, { id: string; name: string; slug: string }[]>();
+    for (const c of allProductCategories) {
+      const arr = catMap.get(c.productId) || [];
+      arr.push({ id: c.id, name: c.name, slug: c.slug });
+      catMap.set(c.productId, arr);
     }
+
+    const badgeMap = new Map<string, string[]>();
+    for (const b of allBadges) {
+      const arr = badgeMap.get(b.productId) || [];
+      arr.push(b.badge);
+      badgeMap.set(b.productId, arr);
+    }
+
+    const probMap = new Map<string, any[]>();
+    for (const p of allProblems) {
+      const arr = probMap.get(p.productId) || [];
+      arr.push(p);
+      probMap.set(p.productId, arr);
+    }
+
+    const featMap = new Map<string, any[]>();
+    for (const f of allFeatures) {
+      const arr = featMap.get(f.productId) || [];
+      arr.push(f);
+      featMap.set(f.productId, arr);
+    }
+
+    const galMap = new Map<string, any[]>();
+    for (const g of allGallery) {
+      const arr = galMap.get(g.productId) || [];
+      arr.push(g);
+      galMap.set(g.productId, arr);
+    }
+
+    const result: FullProduct[] = rawProducts.map((p) => ({
+      ...p,
+      categories: catMap.get(p.id) || [],
+      badges: badgeMap.get(p.id) || [],
+      problems: probMap.get(p.id) || [],
+      features: featMap.get(p.id) || [],
+      gallery: galMap.get(p.id) || [],
+    }));
+
+    cachedPublishedProducts = result;
+    publishedProductsCacheTime = now;
     return result;
   } catch (error) {
     console.error("Error fetching published products:", error);
-    return [];
+    return cachedPublishedProducts || [];
   }
-}
+});
 
-export async function getFeaturedProducts(): Promise<FullProduct[]> {
+export const getFeaturedProducts = cache(async (): Promise<FullProduct[]> => {
   const all = await getPublishedProducts();
   return all.filter((p) => p.isFeatured).slice(0, 6);
-}
+});
 
-export async function getDemoProducts(): Promise<FullProduct[]> {
+export const getDemoProducts = cache(async (): Promise<FullProduct[]> => {
   const all = await getPublishedProducts();
   return all.filter((p) => p.demoEnabled);
-}
+});
 
-export async function getProductBySlug(slug: string): Promise<FullProduct | null> {
+export const getProductBySlug = cache(async (slug: string): Promise<FullProduct | null> => {
   try {
     const raw = await db.select().from(products).where(eq(products.slug, slug)).limit(1);
     if (raw.length === 0) return null;
     const p = raw[0];
 
-    const pCats = await db
-      .select({ id: categories.id, name: categories.name, slug: categories.slug })
-      .from(productCategories)
-      .innerJoin(categories, eq(productCategories.categoryId, categories.id))
-      .where(eq(productCategories.productId, p.id));
-
-    const pBadges = await db
-      .select({ badge: productBadges.badge })
-      .from(productBadges)
-      .where(eq(productBadges.productId, p.id));
-
-    const pProblems = await db
-      .select()
-      .from(productProblems)
-      .where(eq(productProblems.productId, p.id))
-      .orderBy(asc(productProblems.sortOrder));
-
-    const pFeatures = await db
-      .select()
-      .from(productFeatures)
-      .where(eq(productFeatures.productId, p.id))
-      .orderBy(asc(productFeatures.sortOrder));
-
-    const pGallery = await db
-      .select()
-      .from(productGallery)
-      .where(eq(productGallery.productId, p.id))
-      .orderBy(asc(productGallery.sortOrder));
+    const [pCats, pBadges, pProblems, pFeatures, pGallery] = await Promise.all([
+      db
+        .select({ id: categories.id, name: categories.name, slug: categories.slug })
+        .from(productCategories)
+        .innerJoin(categories, eq(productCategories.categoryId, categories.id))
+        .where(eq(productCategories.productId, p.id)),
+      db
+        .select({ badge: productBadges.badge })
+        .from(productBadges)
+        .where(eq(productBadges.productId, p.id)),
+      db
+        .select()
+        .from(productProblems)
+        .where(eq(productProblems.productId, p.id))
+        .orderBy(asc(productProblems.sortOrder)),
+      db
+        .select()
+        .from(productFeatures)
+        .where(eq(productFeatures.productId, p.id))
+        .orderBy(asc(productFeatures.sortOrder)),
+      db
+        .select()
+        .from(productGallery)
+        .where(eq(productGallery.productId, p.id))
+        .orderBy(asc(productGallery.sortOrder)),
+    ]);
 
     return {
       ...p,
@@ -204,38 +268,49 @@ export async function getProductBySlug(slug: string): Promise<FullProduct | null
     console.error("Error fetching product by slug:", error);
     return null;
   }
-}
+});
 
 export async function getAllProductsAdmin(): Promise<FullProduct[]> {
   try {
-    const rawProducts = await db
-      .select()
-      .from(products)
-      .orderBy(asc(products.sortOrder), desc(products.createdAt));
-
-    const result: FullProduct[] = [];
-    for (const p of rawProducts) {
-      const pCats = await db
-        .select({ id: categories.id, name: categories.name, slug: categories.slug })
+    const [rawProducts, allProductCategories, allBadges] = await Promise.all([
+      db
+        .select()
+        .from(products)
+        .orderBy(asc(products.sortOrder), desc(products.createdAt)),
+      db
+        .select({
+          productId: productCategories.productId,
+          id: categories.id,
+          name: categories.name,
+          slug: categories.slug,
+        })
         .from(productCategories)
-        .innerJoin(categories, eq(productCategories.categoryId, categories.id))
-        .where(eq(productCategories.productId, p.id));
+        .innerJoin(categories, eq(productCategories.categoryId, categories.id)),
+      db.select().from(productBadges),
+    ]);
 
-      const pBadges = await db
-        .select({ badge: productBadges.badge })
-        .from(productBadges)
-        .where(eq(productBadges.productId, p.id));
-
-      result.push({
-        ...p,
-        categories: pCats,
-        badges: pBadges.map((b) => b.badge),
-        problems: [],
-        features: [],
-        gallery: [],
-      });
+    const catMap = new Map<string, { id: string; name: string; slug: string }[]>();
+    for (const c of allProductCategories) {
+      const arr = catMap.get(c.productId) || [];
+      arr.push({ id: c.id, name: c.name, slug: c.slug });
+      catMap.set(c.productId, arr);
     }
-    return result;
+
+    const badgeMap = new Map<string, string[]>();
+    for (const b of allBadges) {
+      const arr = badgeMap.get(b.productId) || [];
+      arr.push(b.badge);
+      badgeMap.set(b.productId, arr);
+    }
+
+    return rawProducts.map((p) => ({
+      ...p,
+      categories: catMap.get(p.id) || [],
+      badges: badgeMap.get(p.id) || [],
+      problems: [],
+      features: [],
+      gallery: [],
+    }));
   } catch (error) {
     console.error("Error fetching admin products:", error);
     return [];
@@ -248,34 +323,32 @@ export async function getProductById(id: string): Promise<FullProduct | null> {
     if (raw.length === 0) return null;
     const p = raw[0];
 
-    const pCats = await db
-      .select({ id: categories.id, name: categories.name, slug: categories.slug })
-      .from(productCategories)
-      .innerJoin(categories, eq(productCategories.categoryId, categories.id))
-      .where(eq(productCategories.productId, p.id));
-
-    const pBadges = await db
-      .select({ badge: productBadges.badge })
-      .from(productBadges)
-      .where(eq(productBadges.productId, p.id));
-
-    const pProblems = await db
-      .select()
-      .from(productProblems)
-      .where(eq(productProblems.productId, p.id))
-      .orderBy(asc(productProblems.sortOrder));
-
-    const pFeatures = await db
-      .select()
-      .from(productFeatures)
-      .where(eq(productFeatures.productId, p.id))
-      .orderBy(asc(productFeatures.sortOrder));
-
-    const pGallery = await db
-      .select()
-      .from(productGallery)
-      .where(eq(productGallery.productId, p.id))
-      .orderBy(asc(productGallery.sortOrder));
+    const [pCats, pBadges, pProblems, pFeatures, pGallery] = await Promise.all([
+      db
+        .select({ id: categories.id, name: categories.name, slug: categories.slug })
+        .from(productCategories)
+        .innerJoin(categories, eq(productCategories.categoryId, categories.id))
+        .where(eq(productCategories.productId, p.id)),
+      db
+        .select({ badge: productBadges.badge })
+        .from(productBadges)
+        .where(eq(productBadges.productId, p.id)),
+      db
+        .select()
+        .from(productProblems)
+        .where(eq(productProblems.productId, p.id))
+        .orderBy(asc(productProblems.sortOrder)),
+      db
+        .select()
+        .from(productFeatures)
+        .where(eq(productFeatures.productId, p.id))
+        .orderBy(asc(productFeatures.sortOrder)),
+      db
+        .select()
+        .from(productGallery)
+        .where(eq(productGallery.productId, p.id))
+        .orderBy(asc(productGallery.sortOrder)),
+    ]);
 
     return {
       ...p,

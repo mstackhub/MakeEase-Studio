@@ -2,7 +2,7 @@ import React from "react";
 import { getFeaturedProducts, getCategories, getDemoProducts } from "@/lib/db-queries";
 import { HomeClient } from "./HomeClient";
 
-export const dynamic = "force-dynamic";
+export const revalidate = 60;
 
 export default async function HomePage() {
   const featuredProducts = await getFeaturedProducts();

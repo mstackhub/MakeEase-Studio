@@ -7,7 +7,7 @@ export const metadata: Metadata = {
   description: "เล่าให้เราฟังได้เลย ไม่จำเป็นต้องมี Technical Requirement พร้อมให้คำปรึกษาและออกแบบระบบที่เหมาะสม",
 };
 
-export const dynamic = "force-dynamic";
+export const revalidate = 60;
 
 export default async function ContactPage({
   searchParams,
