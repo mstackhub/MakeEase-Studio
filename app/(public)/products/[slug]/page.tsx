@@ -8,6 +8,8 @@ interface Props {
   params: { slug: string };
 }
 
+export const dynamic = "force-dynamic";
+
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const product = await getProductBySlug(params.slug);
   const settings = await getSettings();

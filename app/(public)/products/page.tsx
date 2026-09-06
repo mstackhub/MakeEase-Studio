@@ -9,6 +9,8 @@ export const metadata: Metadata = {
   description: "Web App และเครื่องมือที่สร้างขึ้นเพื่อแก้ปัญหา ลดขั้นตอน และช่วยให้งานง่ายขึ้น",
 };
 
+export const dynamic = "force-dynamic";
+
 export default async function ProductsPage({
   searchParams,
 }: {

@@ -8,6 +8,8 @@ export const metadata: Metadata = {
   description: "ไม่ต้องดูแค่ Screenshot ลองใช้งาน Web App ที่สนใจได้ก่อนตัดสินใจ",
 };
 
+export const dynamic = "force-dynamic";
+
 export default async function DemoPage() {
   const demoProducts = await getDemoProducts();
   const categories = await getCategories();
