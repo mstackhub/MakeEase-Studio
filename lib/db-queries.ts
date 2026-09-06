@@ -121,6 +121,25 @@ export interface FullProduct {
 let cachedPublishedProducts: FullProduct[] | null = null;
 let publishedProductsCacheTime = 0;
 
+let cachedAdminProducts: FullProduct[] | null = null;
+let adminProductsCacheTime = 0;
+
+let cachedAdminLeads: any[] | null = null;
+let adminLeadsCacheTime = 0;
+
+export interface DashboardStats {
+  totalProducts: number;
+  publishedProducts: number;
+  totalDemoProducts: number;
+  totalLeads: number;
+  newLeads: number;
+  recentLeads: any[];
+  recentProducts: any[];
+}
+
+let cachedDashboardStats: DashboardStats | null = null;
+let dashboardStatsCacheTime = 0;
+
 export function clearDbCache() {
   cachedSettings = null;
   settingsCacheTime = 0;
@@ -128,6 +147,12 @@ export function clearDbCache() {
   categoriesCacheTime = 0;
   cachedPublishedProducts = null;
   publishedProductsCacheTime = 0;
+  cachedAdminProducts = null;
+  adminProductsCacheTime = 0;
+  cachedAdminLeads = null;
+  adminLeadsCacheTime = 0;
+  cachedDashboardStats = null;
+  dashboardStatsCacheTime = 0;
 }
 
 export const getPublishedProducts = cache(async (): Promise<FullProduct[]> => {
@@ -271,6 +296,11 @@ export const getProductBySlug = cache(async (slug: string): Promise<FullProduct 
 });
 
 export async function getAllProductsAdmin(): Promise<FullProduct[]> {
+  const now = Date.now();
+  if (cachedAdminProducts && now - adminProductsCacheTime < 10000) {
+    return cachedAdminProducts;
+  }
+
   try {
     const [rawProducts, allProductCategories, allBadges] = await Promise.all([
       db
@@ -303,7 +333,7 @@ export async function getAllProductsAdmin(): Promise<FullProduct[]> {
       badgeMap.set(b.productId, arr);
     }
 
-    return rawProducts.map((p) => ({
+    const result = rawProducts.map((p) => ({
       ...p,
       categories: catMap.get(p.id) || [],
       badges: badgeMap.get(p.id) || [],
@@ -311,9 +341,13 @@ export async function getAllProductsAdmin(): Promise<FullProduct[]> {
       features: [],
       gallery: [],
     }));
+
+    cachedAdminProducts = result;
+    adminProductsCacheTime = now;
+    return result;
   } catch (error) {
     console.error("Error fetching admin products:", error);
-    return [];
+    return cachedAdminProducts || [];
   }
 }
 
@@ -365,26 +399,42 @@ export async function getProductById(id: string): Promise<FullProduct | null> {
 }
 
 export async function getLeadsAdmin() {
+  const now = Date.now();
+  if (cachedAdminLeads && now - adminLeadsCacheTime < 10000) {
+    return cachedAdminLeads;
+  }
+
   try {
-    return await db.select().from(leads).orderBy(desc(leads.createdAt));
+    const res = await db.select().from(leads).orderBy(desc(leads.createdAt));
+    cachedAdminLeads = res;
+    adminLeadsCacheTime = now;
+    return res;
   } catch (error) {
     console.error("Error fetching leads:", error);
-    return [];
+    return cachedAdminLeads || [];
   }
 }
 
-export async function getDashboardStats() {
+export async function getDashboardStats(): Promise<DashboardStats> {
+  const now = Date.now();
+  if (cachedDashboardStats && now - dashboardStatsCacheTime < 10000) {
+    return cachedDashboardStats;
+  }
+
   try {
-    const allProds = await db.select().from(products);
+    const [allProds, allLeads] = await Promise.all([
+      db.select().from(products),
+      db.select().from(leads).orderBy(desc(leads.createdAt)),
+    ]);
+
     const totalProducts = allProds.length;
     const publishedProducts = allProds.filter((p) => p.status === "published").length;
     const totalDemoProducts = allProds.filter((p) => p.demoEnabled).length;
 
-    const allLeads = await db.select().from(leads).orderBy(desc(leads.createdAt));
     const totalLeads = allLeads.length;
     const newLeads = allLeads.filter((l) => l.status === "New").length;
 
-    return {
+    const res = {
       totalProducts,
       publishedProducts,
       totalDemoProducts,
@@ -393,16 +443,22 @@ export async function getDashboardStats() {
       recentLeads: allLeads.slice(0, 5),
       recentProducts: allProds.slice(0, 5),
     };
+
+    cachedDashboardStats = res;
+    dashboardStatsCacheTime = now;
+    return res;
   } catch (error) {
     console.error("Error getting dashboard stats:", error);
-    return {
-      totalProducts: 0,
-      publishedProducts: 0,
-      totalDemoProducts: 0,
-      totalLeads: 0,
-      newLeads: 0,
-      recentLeads: [],
-      recentProducts: [],
-    };
+    return (
+      cachedDashboardStats || {
+        totalProducts: 0,
+        publishedProducts: 0,
+        totalDemoProducts: 0,
+        totalLeads: 0,
+        newLeads: 0,
+        recentLeads: [],
+        recentProducts: [],
+      }
+    );
   }
 }

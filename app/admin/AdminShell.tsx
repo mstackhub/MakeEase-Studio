@@ -111,6 +111,7 @@ export function AdminShell({ children }: AdminShellProps) {
                 <Link
                   key={item.href}
                   href={item.href}
+                  prefetch={true}
                   onClick={() => setSidebarOpen(false)}
                   className={cn(
                     "flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold transition-colors",

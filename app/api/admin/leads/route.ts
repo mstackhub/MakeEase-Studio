@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db, leads } from "@/db";
 import { eq } from "drizzle-orm";
 import { getAdminSessionFromRequest } from "@/lib/auth";
+import { clearDbCache } from "@/lib/db-queries";
 
 export async function PUT(req: NextRequest) {
   const session = await getAdminSessionFromRequest(req);
@@ -19,6 +20,7 @@ export async function PUT(req: NextRequest) {
       })
       .where(eq(leads.id, id));
 
+    clearDbCache();
     return NextResponse.json({ success: true });
   } catch (error: any) {
     return NextResponse.json({ error: error.message || "Failed to update lead status" }, { status: 500 });
@@ -35,6 +37,7 @@ export async function DELETE(req: NextRequest) {
     if (!id) return NextResponse.json({ error: "ID required" }, { status: 400 });
 
     await db.delete(leads).where(eq(leads.id, id));
+    clearDbCache();
     return NextResponse.json({ success: true });
   } catch (error: any) {
     return NextResponse.json({ error: error.message || "Failed to delete lead" }, { status: 500 });

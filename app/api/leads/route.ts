@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, leads } from "@/db";
+import { clearDbCache } from "@/lib/db-queries";
 
 export async function POST(req: NextRequest) {
   try {
@@ -39,6 +40,7 @@ export async function POST(req: NextRequest) {
       status: "New",
     });
 
+    clearDbCache();
     return NextResponse.json({ success: true, id: leadId });
   } catch (error) {
     console.error("Lead submission error:", error);
