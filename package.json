@@ -1,0 +1,39 @@
+{
+  "name": "turn-problems-into-simple-solutions",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "db:push": "drizzle-kit push",
+    "seed": "tsx db/seed.ts"
+  },
+  "dependencies": {
+    "@libsql/client": "^0.6.2",
+    "bcryptjs": "^2.4.3",
+    "class-variance-authority": "^0.7.0",
+    "clsx": "^2.1.1",
+    "drizzle-orm": "^0.30.10",
+    "jose": "^5.2.4",
+    "lucide-react": "^0.378.0",
+    "next": "13.5.6",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "sonner": "^1.4.41",
+    "tailwind-merge": "^2.3.0"
+  },
+  "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
+    "@types/node": "^20.12.7",
+    "@types/react": "^18.2.79",
+    "@types/react-dom": "^18.2.25",
+    "autoprefixer": "^10.4.19",
+    "drizzle-kit": "^0.21.4",
+    "postcss": "^8.4.38",
+    "tailwindcss": "^3.4.3",
+    "tsx": "^4.7.2",
+    "typescript": "^5.4.5"
+  }
+}
